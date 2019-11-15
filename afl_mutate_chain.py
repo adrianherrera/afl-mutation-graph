@@ -18,7 +18,7 @@ import re
 QUEUE_ORIG_SEED_RE = re.compile(r'id:(?P<id>\d+),orig:(?P<orig_seed>\w+)')
 QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
 QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>havoc,)rep:(?P<rep>\d+)')
-QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src1>\d+)\+(?P<src2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
+QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
 
 
 def parse_args():
@@ -30,7 +30,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def fix_group_dict(mutate_dict):
+def fix_regex_dict(mutate_dict):
     # Remove None values
     mutate_dict = {k:v for k, v in mutate_dict.items() if v is not None}
 
@@ -38,10 +38,10 @@ def fix_group_dict(mutate_dict):
     mutate_dict['id'] = int(mutate_dict['id'])
     if 'src' in mutate_dict:
         mutate_dict['src'] = int(mutate_dict['src'])
-    if 'src1' in mutate_dict:
-        mutate_dict['src1'] = int(mutate_dict['src1'])
-    if 'src2' in mutate_dict:
-        mutate_dict['src2'] = int(mutate_dict['src2'])
+    if 'src_1' in mutate_dict:
+        mutate_dict['src_1'] = int(mutate_dict['src_1'])
+    if 'src_2' in mutate_dict:
+        mutate_dict['src_2'] = int(mutate_dict['src_2'])
     if 'pos' in mutate_dict:
         mutate_dict['pos'] = int(mutate_dict['pos'])
     if 'rep' in mutate_dict:
@@ -59,16 +59,15 @@ def find_seed(seed_dir, seed_id):
     if not seed_files:
         ret = None
     else:
+        # Each seed should have a unique ID
         ret = seed_files[0]
 
     return ret
 
 
-def gen_mutation_chain(seed_path, mutation_chain=None):
-    if mutation_chain is None:
-        mutation_chain = []
+def gen_mutation_chain(seed_path):
     if seed_path is None:
-        return mutation_chain
+        return None
 
     seed_dir, seed_name = os.path.split(seed_path)
 
@@ -76,42 +75,41 @@ def gen_mutation_chain(seed_path, mutation_chain=None):
     if match:
         # We've reached the end of the chain. Append the original source to the
         # mutation chain and return
-        mutate_dict = fix_group_dict(match.groupdict())
-        mutation_chain.append(mutate_dict)
-
-        return mutation_chain
+        return fix_regex_dict(match.groupdict())
 
     match = QUEUE_MUTATE_SEED_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
-        mutate_dict = fix_group_dict(match.groupdict())
-        mutation_chain.append(mutate_dict)
-
+        mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
-        return gen_mutation_chain(parent_seed, mutation_chain)
+
+        mutate_dict['src'] = gen_mutation_chain(parent_seed)
+
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_HAVOC_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
-        mutate_dict = fix_group_dict(match.groupdict())
-        mutation_chain.append(mutate_dict)
-
+        mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
-        return gen_mutation_chain(parent_seed, mutation_chain)
+
+        mutate_dict['src'] = gen_mutation_chain(parent_seed)
+
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_SPLICE_RE.match(seed_name)
     if match:
         # Spliced seeds have two parents. Recurse on both
-        mutate_dict = fix_group_dict(match.groupdict())
-        mutation_chain.append(mutate_dict)
+        mutate_dict = fix_regex_dict(match.groupdict())
+        parent_seed_1 = find_seed(seed_dir, mutate_dict['src_1'])
+        parent_seed_2 = find_seed(seed_dir, mutate_dict['src_2'])
 
-        parent_seed_1 = find_seed(seed_dir, mutate_dict['src1'])
-        parent_seed_2 = find_seed(seed_dir, mutate_dict['src2'])
+        mutate_dict['src_1'] = gen_mutation_chain(parent_seed_1)
+        mutate_dict['src_2'] = gen_mutation_chain(parent_seed_2)
 
-        return gen_mutation_chain(parent_seed_1, mutation_chain) + \
-                gen_mutation_chain(parent_seed_2, mutation_chain)
+        return mutate_dict
 
-    return mutation_chain
+    raise Exception('Failed to find parent seed for `%s`' % seed_name)
 
 
 def main():
