@@ -13,11 +13,24 @@ import glob
 import json
 import os
 import re
+import sys
+
+import networkx as nx
+try:
+    import pygraphviz
+    from networkx.drawing.nx_agraph import write_dot
+except ImportError:
+    try:
+        import pydot
+        from networkx.drawing.nx_pydot import write_dot
+    except ImportError:
+        print('Neither pygraphviz or pydot were found')
+        raise
 
 
 QUEUE_ORIG_SEED_RE = re.compile(r'id:(?P<id>\d+),orig:(?P<orig_seed>\w+)')
 QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
-QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>havoc,)rep:(?P<rep>\d+)')
+QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>havoc),rep:(?P<rep>\d+)')
 QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
 
 
@@ -26,6 +39,8 @@ def parse_args():
                                         'from an AFL seed')
     parser.add_argument('-d', '--dir', required=True, help='AFL seed directory')
     parser.add_argument('seed', help='Seed to recover mutation chain for')
+    parser.add_argument('-f', '--output-format', default='json',
+                        choices=['json', 'dot'], help='Output format')
 
     return parser.parse_args()
 
@@ -112,6 +127,35 @@ def gen_mutation_chain(seed_path):
     raise Exception('Failed to find parent seed for `%s`' % seed_name)
 
 
+def create_edge_label(mutate_dict):
+    label = 'op:%s' % mutate_dict['op']
+    if 'pos' in mutate_dict:
+        label = '%s,pos:%d' % (label, mutate_dict['pos'])
+    if 'val' in mutate_dict:
+        label = '%s,val:%s%d' % (label, mutate_dict.get('val_type', ''),
+                                 mutate_dict['val'])
+    if 'rep' in mutate_dict:
+        label = '%s,rep:%d' % (label, mutate_dict['rep'])
+
+    return label
+
+
+def create_graph(mutation_chain, graph=None):
+    if not graph:
+        graph = nx.DiGraph()
+
+    for src in mutation_chain['src']:
+        if 'orig_seed' in src:
+            graph.add_edge(src['orig_seed'], mutation_chain['id'],
+                           label='"%s"' % create_edge_label(mutation_chain))
+        else:
+            graph.add_edge(src['id'], mutation_chain['id'],
+                           label='"%s"' % create_edge_label(mutation_chain))
+            create_graph(src, graph)
+
+    return graph
+
+
 def main():
     args = parse_args()
 
@@ -125,7 +169,11 @@ def main():
         raise Exception('%s is not a valid seed in %s' % (seed_name, seed_dir))
 
     mutation_chain = gen_mutation_chain(seed_path)
-    print(json.dumps(mutation_chain))
+
+    if args.output_format == 'json':
+        print(json.dumps(mutation_chain))
+    elif args.output_format == 'dot':
+        write_dot(create_graph(mutation_chain), sys.stdout)
 
 
 if __name__ == '__main__':
