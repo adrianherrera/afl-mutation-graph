@@ -83,7 +83,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['src'] = gen_mutation_chain(parent_seed)
+        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
 
@@ -93,7 +93,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['src'] = gen_mutation_chain(parent_seed)
+        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
 
@@ -101,11 +101,11 @@ def gen_mutation_chain(seed_path):
     if match:
         # Spliced seeds have two parents. Recurse on both
         mutate_dict = fix_regex_dict(match.groupdict())
-        parent_seed_1 = find_seed(seed_dir, mutate_dict['src_1'])
-        parent_seed_2 = find_seed(seed_dir, mutate_dict['src_2'])
+        parent_seed_1 = find_seed(seed_dir, mutate_dict.pop('src_1'))
+        parent_seed_2 = find_seed(seed_dir, mutate_dict.pop('src_2'))
 
-        mutate_dict['src_1'] = gen_mutation_chain(parent_seed_1)
-        mutate_dict['src_2'] = gen_mutation_chain(parent_seed_2)
+        mutate_dict['src'] = [gen_mutation_chain(parent_seed_1),
+                              gen_mutation_chain(parent_seed_2)]
 
         return mutate_dict
 
