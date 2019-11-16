@@ -28,10 +28,32 @@ except ImportError:
         raise
 
 
+# Regexs for extracting mutation information from seeds in the AFL queue
 QUEUE_ORIG_SEED_RE = re.compile(r'id:(?P<id>\d+),orig:(?P<orig_seed>\w+)')
 QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
 QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>havoc),rep:(?P<rep>\d+)')
 QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
+
+# Maps short stag names to full stage names
+OP_MAPPING = {
+    'flip1': 'bitflip 1/1',
+    'flip2': 'bitflip 2/1',
+    'flip4': 'bitflip 4/1',
+    'flip8': 'bitflip 8/8',
+    'flip16': 'bitflip 16/8',
+    'flip32': 'bitflip 32/8',
+    'arith8': 'arith 8/8',
+    'arith16': 'arith 16/8',
+    'arith32': 'arith 32/8',
+    'int8': 'interest 8/8',
+    'int16': 'interest 16/8',
+    'int32': 'interest 32/8',
+    'ext_U0': 'user extras (over)',
+    'ext_UI': 'uexer extras (insert)',
+    'ext_A0': 'auto extras (over)',
+    'havoc': 'havoc',
+    'splice': 'splice',
+}
 
 
 def parse_args():
@@ -51,6 +73,7 @@ def fix_regex_dict(mutate_dict):
 
     # Convert ints
     mutate_dict['id'] = int(mutate_dict['id'])
+
     if 'src' in mutate_dict:
         mutate_dict['src'] = int(mutate_dict['src'])
     if 'src_1' in mutate_dict:
@@ -63,6 +86,10 @@ def fix_regex_dict(mutate_dict):
         mutate_dict['rep'] = int(mutate_dict['rep'])
     if 'val' in mutate_dict:
         mutate_dict['val'] = int(mutate_dict['val'])
+
+    # Expand op names to full stage names
+    if 'op' in mutate_dict:
+        mutate_dict['op'] = OP_MAPPING[mutate_dict['op']]
 
     return mutate_dict
 
@@ -128,14 +155,14 @@ def gen_mutation_chain(seed_path):
 
 
 def create_edge_label(mutate_dict):
-    label = 'op:%s' % mutate_dict['op']
+    label = 'op: %s' % mutate_dict['op']
     if 'pos' in mutate_dict:
-        label = '%s,pos:%d' % (label, mutate_dict['pos'])
+        label = '%s, pos: %d' % (label, mutate_dict['pos'])
     if 'val' in mutate_dict:
-        label = '%s,val:%s%d' % (label, mutate_dict.get('val_type', ''),
-                                 mutate_dict['val'])
+        label = '%s, val: %s%d' % (label, mutate_dict.get('val_type', ''),
+                                    mutate_dict['val'])
     if 'rep' in mutate_dict:
-        label = '%s,rep:%d' % (label, mutate_dict['rep'])
+        label = '%s, rep: %d' % (label, mutate_dict['rep'])
 
     return label
 
