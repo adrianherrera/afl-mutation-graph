@@ -60,9 +60,9 @@ def parse_args():
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
     parser.add_argument('-d', '--dir', required=True, help='AFL seed directory')
-    parser.add_argument('seed', help='Seed to recover mutation chain for')
     parser.add_argument('-f', '--output-format', default='json',
                         choices=['json', 'dot'], help='Output format')
+    parser.add_argument('seed', help='Seed to recover mutation chain for')
 
     return parser.parse_args()
 
