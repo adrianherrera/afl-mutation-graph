@@ -30,9 +30,9 @@ except ImportError:
 
 # Regexs for extracting mutation information from seeds in the AFL queue
 QUEUE_ORIG_SEED_RE = re.compile(r'id:(?P<id>\d+),orig:(?P<orig_seed>\w+)')
-QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
-QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src>\d+),op:(?P<op>havoc),rep:(?P<rep>\d+)')
-QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
+QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
+QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src>\d+),op:(?P<op>havoc),rep:(?P<rep>\d+)')
+QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
 
 # Maps short stag names to full stage names
 OP_MAPPING = {
@@ -74,6 +74,8 @@ def fix_regex_dict(mutate_dict):
     # Convert ints
     mutate_dict['id'] = int(mutate_dict['id'])
 
+    if 'sig' in mutate_dict:
+        mutate_dict['sig'] = int(mutate_dict['sig'])
     if 'src' in mutate_dict:
         mutate_dict['src'] = int(mutate_dict['src'])
     if 'src_1' in mutate_dict:
@@ -112,6 +114,11 @@ def gen_mutation_chain(seed_path):
         return None
 
     seed_dir, seed_name = os.path.split(seed_path)
+
+    # If the seed is a crash, move across to the queue
+    fuzz_dir, seed_dir_name = os.path.split(seed_dir)
+    if seed_dir_name == 'crashes':
+        seed_dir = os.path.join(fuzz_dir, 'queue')
 
     match = QUEUE_ORIG_SEED_RE.match(seed_name)
     if match:
