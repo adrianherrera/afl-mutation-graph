@@ -59,10 +59,10 @@ OP_MAPPING = {
 def parse_args():
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
-    parser.add_argument('-d', '--dir', required=True, help='AFL seed directory')
     parser.add_argument('-f', '--output-format', default='json',
                         choices=['json', 'dot'], help='Output format')
-    parser.add_argument('seed', help='Seed to recover mutation chain for')
+    parser.add_argument('seed_path',
+                        help='Path to the seed to recover mutation chain for')
 
     return parser.parse_args()
 
@@ -186,14 +186,9 @@ def create_graph(mutation_chain, graph=None):
 def main():
     args = parse_args()
 
-    seed_dir = args.dir
-    if not os.path.isdir(seed_dir):
-        raise Exception('%s is not a valid directory' % seed_dir)
-
-    seed_name = args.seed
-    seed_path = os.path.join(seed_dir, seed_name)
+    seed_path = args.seed_path
     if not os.path.isfile(seed_path):
-        raise Exception('%s is not a valid seed in %s' % (seed_name, seed_dir))
+        raise Exception('%s is not a valid seed file' % seed_path)
 
     mutation_chain = gen_mutation_chain(seed_path)
 
