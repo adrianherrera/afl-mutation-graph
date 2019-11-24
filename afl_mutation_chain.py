@@ -61,7 +61,7 @@ def parse_args():
                                         'from an AFL seed')
     parser.add_argument('-f', '--output-format', default='json',
                         choices=['json', 'dot'], help='Output format')
-    parser.add_argument('seed_path',
+    parser.add_argument('seed_path', nargs='+',
                         help='Path to the seed to recover mutation chain for')
 
     return parser.parse_args()
@@ -112,6 +112,9 @@ def find_seed(seed_dir, seed_id):
 def gen_mutation_chain(seed_path):
     if seed_path is None:
         return None
+
+    if not os.path.isfile(seed_path):
+        raise Exception('%s is not a valid seed file ' % seed_path)
 
     seed_dir, seed_name = os.path.split(seed_path)
 
@@ -167,25 +170,26 @@ def create_edge_label(mutate_dict):
         label = '%s, pos: %d' % (label, mutate_dict['pos'])
     if 'val' in mutate_dict:
         label = '%s, val: %s%d' % (label, mutate_dict.get('val_type', ''),
-                                    mutate_dict['val'])
+                                   mutate_dict['val'])
     if 'rep' in mutate_dict:
         label = '%s, rep: %d' % (label, mutate_dict['rep'])
 
     return label
 
 
-def create_graph(mutation_chain, graph=None):
+def create_graph(mutation_chains, graph=None):
     if not graph:
         graph = nx.DiGraph()
 
-    for src in mutation_chain['src']:
-        if 'orig_seed' in src:
-            graph.add_edge(src['orig_seed'], mutation_chain['id'],
-                           label='"%s"' % create_edge_label(mutation_chain))
-        else:
-            graph.add_edge(src['id'], mutation_chain['id'],
-                           label='"%s"' % create_edge_label(mutation_chain))
-            create_graph(src, graph)
+    for mutation_chain in mutation_chains:
+        for src in mutation_chain['src']:
+            if 'orig_seed' in src:
+                graph.add_edge(src['orig_seed'], mutation_chain['id'],
+                               label='"%s"' % create_edge_label(mutation_chain))
+            else:
+                graph.add_edge(src['id'], mutation_chain['id'],
+                               label='"%s"' % create_edge_label(mutation_chain))
+                create_graph([src], graph)
 
     return graph
 
@@ -194,15 +198,15 @@ def main():
     args = parse_args()
 
     seed_path = args.seed_path
-    if not os.path.isfile(seed_path):
-        raise Exception('%s is not a valid seed file' % seed_path)
+    mutation_chains = []
 
-    mutation_chain = gen_mutation_chain(seed_path)
+    for seed_path in args.seed_path:
+        mutation_chains.append(gen_mutation_chain(seed_path))
 
     if args.output_format == 'json':
-        print(json.dumps(mutation_chain))
+        print(json.dumps(mutation_chains))
     elif args.output_format == 'dot':
-        write_dot(create_graph(mutation_chain), sys.stdout)
+        write_dot(create_graph(mutation_chains), sys.stdout)
 
 
 if __name__ == '__main__':
