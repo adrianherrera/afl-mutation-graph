@@ -55,6 +55,9 @@ OP_MAPPING = {
     'splice': 'splice',
 }
 
+# Regex elements to convert to ints
+CONVERT_TO_INTS = ('id', 'sig', 'src', 'src_1', 'src_2', 'pos', 'rep', 'val')
+
 
 def parse_args():
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
@@ -62,7 +65,7 @@ def parse_args():
     parser.add_argument('-f', '--output-format', default='json',
                         choices=['json', 'dot'], help='Output format')
     parser.add_argument('seed_path', nargs='+',
-                        help='Path to the seed to recover mutation chain for')
+                        help='Path to the seed(s) to recover mutation chain')
 
     return parser.parse_args()
 
@@ -72,22 +75,9 @@ def fix_regex_dict(mutate_dict):
     mutate_dict = {k:v for k, v in mutate_dict.items() if v is not None}
 
     # Convert ints
-    mutate_dict['id'] = int(mutate_dict['id'])
-
-    if 'sig' in mutate_dict:
-        mutate_dict['sig'] = int(mutate_dict['sig'])
-    if 'src' in mutate_dict:
-        mutate_dict['src'] = int(mutate_dict['src'])
-    if 'src_1' in mutate_dict:
-        mutate_dict['src_1'] = int(mutate_dict['src_1'])
-    if 'src_2' in mutate_dict:
-        mutate_dict['src_2'] = int(mutate_dict['src_2'])
-    if 'pos' in mutate_dict:
-        mutate_dict['pos'] = int(mutate_dict['pos'])
-    if 'rep' in mutate_dict:
-        mutate_dict['rep'] = int(mutate_dict['rep'])
-    if 'val' in mutate_dict:
-        mutate_dict['val'] = int(mutate_dict['val'])
+    for key in CONVERT_TO_INTS:
+        if key in mutate_dict:
+            mutate_dict[key] = int(mutate_dict[key])
 
     # Expand op names to full stage names
     if 'op' in mutate_dict:
@@ -196,8 +186,6 @@ def create_graph(mutation_chains, graph=None):
 
 def main():
     args = parse_args()
-
-    seed_path = args.seed_path
     mutation_chains = []
 
     for seed_path in args.seed_path:
