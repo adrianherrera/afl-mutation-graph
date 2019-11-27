@@ -48,9 +48,9 @@ OP_MAPPING = {
     'int8': 'interest 8/8',
     'int16': 'interest 16/8',
     'int32': 'interest 32/8',
-    'ext_U0': 'user extras (over)',
-    'ext_UI': 'uexer extras (insert)',
-    'ext_A0': 'auto extras (over)',
+    'ext_UO': 'user extras (over)',
+    'ext_UI': 'user extras (insert)',
+    'ext_AO': 'auto extras (over)',
     'havoc': 'havoc',
     'splice': 'splice',
 }
