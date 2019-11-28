@@ -60,6 +60,7 @@ CONVERT_TO_INTS = ('id', 'sig', 'src', 'src_1', 'src_2', 'pos', 'rep', 'val')
 
 
 def parse_args():
+    """Parse command-line arguments."""
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
     parser.add_argument('-f', '--output-format', default='json',
@@ -71,6 +72,11 @@ def parse_args():
 
 
 def fix_regex_dict(mutate_dict):
+    """
+    Fix the groupdict returned by the regex match.
+
+    Convert strings to int, etc.
+    """
     # Remove None values
     mutate_dict = {k:v for k, v in mutate_dict.items() if v is not None}
 
@@ -87,6 +93,7 @@ def fix_regex_dict(mutate_dict):
 
 
 def find_seed(seed_dir, seed_id):
+    """Find a seed file with the given ID."""
     seed_path = os.path.join(seed_dir, 'id:%06d,*' % seed_id)
     seed_files = glob.glob(seed_path)
 
@@ -100,6 +107,7 @@ def find_seed(seed_dir, seed_id):
 
 
 def gen_mutation_chain(seed_path):
+    """Recursively generate a mutation chain for the given AFL seed."""
     if seed_path is None:
         return None
 
@@ -155,6 +163,7 @@ def gen_mutation_chain(seed_path):
 
 
 def create_edge_label(mutate_dict):
+    """Create a meaningful label for the mutation graph."""
     label = 'op: %s' % mutate_dict['op']
     if 'pos' in mutate_dict:
         label = '%s, pos: %d' % (label, mutate_dict['pos'])
@@ -168,6 +177,7 @@ def create_edge_label(mutate_dict):
 
 
 def create_graph(mutation_chains, graph=None):
+    """Recursively produce a graphviz graph of the mutation chain(s)."""
     if not graph:
         graph = nx.DiGraph()
 
@@ -185,6 +195,7 @@ def create_graph(mutation_chains, graph=None):
 
 
 def main():
+    """The main function."""
     args = parse_args()
     mutation_chains = []
 
