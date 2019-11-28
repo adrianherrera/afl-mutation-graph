@@ -125,7 +125,8 @@ def gen_mutation_chain(seed_path):
     if match:
         # We've reached the end of the chain
         mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+
+        mutate_dict['path'] = os.path.realpath(seed_path)
 
         return mutate_dict
 
@@ -135,7 +136,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['path'] = seed_path
+        mutate_dict['path'] = os.path.realpath(seed_path)
         mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
@@ -146,7 +147,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['path'] = seed_path
+        mutate_dict['path'] = os.path.realpath(seed_path)
         mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
@@ -158,7 +159,7 @@ def gen_mutation_chain(seed_path):
         parent_seed_1 = find_seed(seed_dir, mutate_dict.pop('src_1'))
         parent_seed_2 = find_seed(seed_dir, mutate_dict.pop('src_2'))
 
-        mutate_dict['path'] = seed_path
+        mutate_dict['path'] = os.path.realpath(seed_path)
         mutate_dict['src'] = [gen_mutation_chain(parent_seed_1),
                               gen_mutation_chain(parent_seed_2)]
 
