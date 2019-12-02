@@ -98,12 +98,10 @@ def find_seed(seed_dir, seed_id):
     seed_files = glob.glob(seed_path)
 
     if not seed_files:
-        ret = None
-    else:
-        # Each seed should have a unique ID
-        ret = seed_files[0]
+        raise Exception('Could not find seed %s in %s' % (seed_id, seed_dir))
 
-    return ret
+    # Each seed should have a unique ID
+    return seed_files[0]
 
 
 def gen_mutation_chain(seed_path):
@@ -188,7 +186,7 @@ def create_graph(mutation_chains, graph=None):
         graph = nx.DiGraph()
 
     for mutation_chain in mutation_chains:
-        for src in mutation_chain['src']:
+        for src in mutation_chain.get('src', []):
             if 'orig_seed' in src:
                 graph.add_edge(src['orig_seed'], mutation_chain['id'],
                                label='"%s"' % create_edge_label(mutation_chain))
