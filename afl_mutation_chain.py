@@ -207,6 +207,7 @@ def create_graph(mutation_chains, graph=None):
     for mutation_chain in mutation_chains:
         for src in mutation_chain.get('src', []):
             if 'orig_seed' in src:
+                graph.add_node(src['orig_seed'], shape='rect')
                 graph.add_edge(src['orig_seed'], mutation_chain['id'],
                                label='"%s"' % create_edge_label(mutation_chain))
             else:
