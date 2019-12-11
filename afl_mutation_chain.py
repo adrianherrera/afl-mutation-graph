@@ -173,7 +173,7 @@ def gen_mutation_chain(seed_path):
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
         mutate_dict['path'] = os.path.realpath(seed_path)
-        mutate_dict['src'] = gen_mutation_chain(parent_seed)
+        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
 
@@ -182,16 +182,21 @@ def gen_mutation_chain(seed_path):
 
 def create_edge_label(mutate_dict):
     """Create a meaningful label for the mutation graph."""
-    label = 'op: %s' % mutate_dict['op']
-    if 'pos' in mutate_dict:
-        label = '%s, pos: %d' % (label, mutate_dict['pos'])
-    if 'val' in mutate_dict:
-        label = '%s, val: %s%d' % (label, mutate_dict.get('val_type', ''),
-                                   mutate_dict['val'])
-    if 'rep' in mutate_dict:
-        label = '%s, rep: %d' % (label, mutate_dict['rep'])
+    label_elems = []
 
-    return label
+    if 'op' in mutate_dict:
+        label_elems.append('op: %s' % mutate_dict['op'])
+    if 'pos' in mutate_dict:
+        label = label_elems.append('pos: %d' % mutate_dict['pos'])
+    if 'val' in mutate_dict:
+        label_elems.append('val: %s%d' % (mutate_dict.get('val_type', ''),
+                                          mutate_dict['val']))
+    if 'rep' in mutate_dict:
+        label_elems.append('rep: %d' % mutate_dict['rep'])
+    if 'syncing_party' in mutate_dict:
+        label_elems.append('sync: %s' % mutate_dict['syncing_party'])
+
+    return ', '.join(label_elems)
 
 
 def create_graph(mutation_chains, graph=None):
