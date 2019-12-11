@@ -11,6 +11,7 @@ python afl_mutation_chain.py -f dot $(find queue/ -wholename 'queue/id:*') > que
 dot -Tpdf queue.dot > queue.pdf
 ```
 
-Example mutation chain, starting from a corpus of seeds (in rectangles):
+Example mutation chain, starting from a corpus of seeds (in rectangles).
+Hexagon nodes are crashing seeds:
 
 ![mutation chain example](etc/mutate_chain_example.png "mutation chain example")

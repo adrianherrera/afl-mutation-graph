@@ -204,6 +204,11 @@ def create_node_label(mutate_dict):
     return os.path.basename(mutate_dict['path'])
 
 
+def is_crash_seed(mutate_dict):
+    """Returns `True` if the given mutation dict is for a crashing seed."""
+    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
+
+
 def create_graph(mutation_chains, graph=None):
     """Recursively produce a graphviz graph of the mutation chain(s)."""
     if not graph:
@@ -211,7 +216,9 @@ def create_graph(mutation_chains, graph=None):
 
     for mutation_chain in mutation_chains:
         mutation_chain_id = mutation_chain['id']
-        graph.add_node(mutation_chain_id,
+        node_shape = 'hexagon' if is_crash_seed(mutation_chain) else 'oval'
+
+        graph.add_node(mutation_chain_id, shape=node_shape,
                        label='"%s"' % create_node_label(mutation_chain))
 
         for src in mutation_chain.get('src', []):
