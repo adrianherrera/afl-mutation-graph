@@ -181,7 +181,7 @@ def gen_mutation_chain(seed_path):
 
 
 def create_edge_label(mutate_dict):
-    """Create a meaningful label for the mutation graph."""
+    """Create a meaningful label for an edge in the mutation graph."""
     label_elems = []
 
     if 'op' in mutate_dict:
@@ -199,19 +199,32 @@ def create_edge_label(mutate_dict):
     return ', '.join(label_elems)
 
 
+def create_node_label(mutate_dict):
+    """Create a meaningful label for a node in the mutation graph."""
+    return os.path.basename(mutate_dict['path'])
+
+
 def create_graph(mutation_chains, graph=None):
     """Recursively produce a graphviz graph of the mutation chain(s)."""
     if not graph:
         graph = nx.DiGraph()
 
     for mutation_chain in mutation_chains:
+        mutation_chain_id = mutation_chain['id']
+        graph.add_node(mutation_chain_id,
+                       label='"%s"' % create_node_label(mutation_chain))
+
         for src in mutation_chain.get('src', []):
             if 'orig_seed' in src:
-                graph.add_node(src['orig_seed'], shape='rect')
-                graph.add_edge(src['orig_seed'], mutation_chain['id'],
+                orig_seed = src['orig_seed']
+                graph.add_node(orig_seed, shape='rect',
+                               label='"%s"' % create_node_label(src))
+                graph.add_edge(orig_seed, mutation_chain_id,
                                label='"%s"' % create_edge_label(mutation_chain))
             else:
-                graph.add_edge(src['id'], mutation_chain['id'],
+                src_id = src['id']
+                graph.add_node(src_id, label='"%s"' % create_node_label(src))
+                graph.add_edge(src_id, mutation_chain_id,
                                label='"%s"' % create_edge_label(mutation_chain))
                 create_graph([src], graph)
 
