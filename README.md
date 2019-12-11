@@ -11,6 +11,6 @@ python afl_mutation_chain.py -f dot $(find queue/ -wholename 'queue/id:*') > que
 dot -Tpdf queue.dot > queue.pdf
 ```
 
-Example mutation chain, starting from the initial seed `seed`:
+Example mutation chain, starting from a corpus of seeds (in rectangles):
 
 ![mutation chain example](etc/mutate_chain_example.png "mutation chain example")
