@@ -29,11 +29,11 @@ except ImportError:
 
 
 # Regexs for extracting mutation information from seeds in the AFL queue
-QUEUE_ORIG_SEED_RE = re.compile(r'id:(?P<id>\d+),orig:(?P<orig_seed>\w+)')
-QUEUE_MUTATE_SEED_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src>\d+),op:(?P<op>(?!havoc|splice)\w+),pos:(?P<pos>\d+)(?:,val:(?P<val_type>[\w:]+)?(?P<val>[+-]\d+))?')
-QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src>\d+),op:(?P<op>havoc),rep:(?P<rep>\d+)')
-QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id:(?P<id>\d+),(?:sig:(?P<sig>\d+),)?src:(?P<src_1>\d+)\+(?P<src_2>\d+),op:(?P<op>splice),rep:(?P<rep>\d+)')
-QUEUE_MUTATE_SEED_SYNC_RE = re.compile(r'id:(?P<id>\d+),sync:(?P<syncing_party>[\w]+),src:(?P<src>\d+)')
+QUEUE_ORIG_SEED_RE = re.compile(r'id[:_](?P<id>\d+),orig[:_](?P<orig_seed>\w+)')
+QUEUE_MUTATE_SEED_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src>\d+),op[:_](?P<op>(?!havoc|splice)\w+),pos[:_](?P<pos>\d+)(?:,val[:_](?P<val_type>[\w:_]+)?(?P<val>[+-]\d+))?')
+QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src>\d+),op[:_](?P<op>havoc),rep[:_](?P<rep>\d+)')
+QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src_1>\d+)\+(?P<src_2>\d+),op[:_](?P<op>splice),rep[:_](?P<rep>\d+)')
+QUEUE_MUTATE_SEED_SYNC_RE = re.compile(r'id[:_](?P<id>\d+),sync[:_](?P<syncing_party>[\w]+),src[:_](?P<src>\d+)')
 
 # Maps short stag names to full stage names
 OP_MAPPING = {
@@ -95,7 +95,7 @@ def fix_regex_dict(mutate_dict):
 
 def find_seed(seed_dir, seed_id):
     """Find a seed file with the given ID."""
-    seed_path = os.path.join(seed_dir, 'id:%06d,*' % seed_id)
+    seed_path = os.path.join(seed_dir, 'id[:_]%06d,*' % seed_id)
     seed_files = glob.glob(seed_path)
 
     if not seed_files:
@@ -187,7 +187,7 @@ def create_edge_label(mutate_dict):
     if 'op' in mutate_dict:
         label_elems.append('op: %s' % mutate_dict['op'])
     if 'pos' in mutate_dict:
-        label = label_elems.append('pos: %d' % mutate_dict['pos'])
+        label_elems.append('pos: %d' % mutate_dict['pos'])
     if 'val' in mutate_dict:
         label_elems.append('val: %s%d' % (mutate_dict.get('val_type', ''),
                                           mutate_dict['val']))
