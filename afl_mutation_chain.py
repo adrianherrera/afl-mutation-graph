@@ -118,6 +118,7 @@ def gen_mutation_chain(seed_path):
         raise Exception('%s is not a valid seed file ' % seed_path)
 
     seed_dir, seed_name = os.path.split(seed_path)
+    seed_path = os.path.realpath(seed_path)
 
     # If the seed is a crash, move across to the queue
     fuzz_dir, seed_dir_name = os.path.split(seed_dir)
@@ -129,7 +130,7 @@ def gen_mutation_chain(seed_path):
         # We've reached the end of the chain
         mutate_dict = fix_regex_dict(match.groupdict())
 
-        mutate_dict['path'] = os.path.realpath(seed_path)
+        mutate_dict['path'] = seed_path
 
         return mutate_dict
 
@@ -139,7 +140,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['path'] = os.path.realpath(seed_path)
+        mutate_dict['path'] = seed_path
         mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
@@ -150,7 +151,7 @@ def gen_mutation_chain(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['path'] = os.path.realpath(seed_path)
+        mutate_dict['path'] = seed_path
         mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
@@ -162,7 +163,7 @@ def gen_mutation_chain(seed_path):
         parent_seed_1 = find_seed(seed_dir, mutate_dict.pop('src_1'))
         parent_seed_2 = find_seed(seed_dir, mutate_dict.pop('src_2'))
 
-        mutate_dict['path'] = os.path.realpath(seed_path)
+        mutate_dict['path'] = seed_path
         mutate_dict['src'] = [gen_mutation_chain(parent_seed_1),
                               gen_mutation_chain(parent_seed_2)]
 
@@ -176,7 +177,7 @@ def gen_mutation_chain(seed_path):
                                 mutate_dict['syncing_party'], 'queue')
         parent_seed = find_seed(seed_dir, mutate_dict['src'])
 
-        mutate_dict['path'] = os.path.realpath(seed_path)
+        mutate_dict['path'] = seed_path
         mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
         return mutate_dict
