@@ -1,10 +1,12 @@
 #!/usr/bin/env python
-#
-# Reconstructs an approximate AFL mutation chain based on the file names of
-# seeds in a queue
-#
-# Author: Adrian Herrera
-#
+
+"""
+Reconstructs an approximate AFL mutation chain based on the file names of seeds
+in a queue.
+
+ Author: Adrian Herrera
+"""
+
 
 from __future__ import print_function
 
@@ -66,6 +68,8 @@ def parse_args():
                                         'from an AFL seed')
     parser.add_argument('-f', '--output-format', default='json',
                         choices=['json', 'dot'], help='Output format')
+    parser.add_argument('--stack-limit', default=1000, type=int,
+                        help='Set the Python stack limit')
     parser.add_argument('seed_path', nargs='+',
                         help='Path to the seed(s) to recover mutation chain')
 
@@ -242,6 +246,8 @@ def main():
     """The main function."""
     args = parse_args()
     mutation_chains = []
+
+    sys.setrecursionlimit(args.stack_limit)
 
     for seed_path in args.seed_path:
         mutation_chain = gen_mutation_chain(seed_path)
