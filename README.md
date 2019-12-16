@@ -14,4 +14,4 @@ dot -Tpdf queue.dot > queue.pdf
 Example mutation chain, starting from a corpus of seeds (in rectangles).
 Hexagon nodes are crashing seeds:
 
-![mutation chain example](etc/mutate_chain_example.png "mutation chain example")
+![mutation chain example](img/mutate_chain_example.png "mutation chain example")
