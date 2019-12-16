@@ -12,7 +12,6 @@ from __future__ import print_function
 
 from argparse import ArgumentParser
 import glob
-import json
 import os
 import re
 import sys
@@ -66,10 +65,6 @@ def parse_args():
     """Parse command-line arguments."""
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
-    parser.add_argument('-f', '--output-format', default='json',
-                        choices=['json', 'dot'], help='Output format')
-    parser.add_argument('--stack-limit', default=1000, type=int,
-                        help='Set the Python stack limit')
     parser.add_argument('seed_path', nargs='+',
                         help='Path to the seed(s) to recover mutation chain')
 
@@ -109,14 +104,15 @@ def find_seed(seed_dir, seed_id):
     return seed_files[0]
 
 
-def gen_mutation_chain(seed_path):
-    """Recursively generate a mutation chain for the given AFL seed."""
-    if seed_path is None:
-        return None
+def get_mutation_dict(seed_path):
+    """
+    Parse out a mutation dict from the given seed.
 
-    if not os.path.isfile(seed_path):
-        raise Exception('%s is not a valid seed file ' % seed_path)
+    Returns a tuple of:
 
+        1. Mutation dict
+        2. List of (current seed, parent) tuples
+    """
     seed_dir, seed_name = os.path.split(seed_path)
     seed_path = os.path.realpath(seed_path)
 
@@ -129,58 +125,53 @@ def gen_mutation_chain(seed_path):
     if match:
         # We've reached the end of the chain
         mutate_dict = fix_regex_dict(match.groupdict())
-
         mutate_dict['path'] = seed_path
 
-        return mutate_dict
+        return mutate_dict, [(seed_path, None)]
 
     match = QUEUE_MUTATE_SEED_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
         mutate_dict = fix_regex_dict(match.groupdict())
-        parent_seed = find_seed(seed_dir, mutate_dict['src'])
-
         mutate_dict['path'] = seed_path
-        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
-        return mutate_dict
+        src = mutate_dict['src']
+
+        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
 
     match = QUEUE_MUTATE_SEED_HAVOC_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
         mutate_dict = fix_regex_dict(match.groupdict())
-        parent_seed = find_seed(seed_dir, mutate_dict['src'])
-
         mutate_dict['path'] = seed_path
-        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
 
-        return mutate_dict
+        src = mutate_dict['src']
+
+        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
 
     match = QUEUE_MUTATE_SEED_SPLICE_RE.match(seed_name)
     if match:
         # Spliced seeds have two parents. Recurse on both
         mutate_dict = fix_regex_dict(match.groupdict())
-        parent_seed_1 = find_seed(seed_dir, mutate_dict.pop('src_1'))
-        parent_seed_2 = find_seed(seed_dir, mutate_dict.pop('src_2'))
-
         mutate_dict['path'] = seed_path
-        mutate_dict['src'] = [gen_mutation_chain(parent_seed_1),
-                              gen_mutation_chain(parent_seed_2)]
 
-        return mutate_dict
+        src_1 = mutate_dict['src_1']
+        src_2 = mutate_dict['src_2']
+
+        return mutate_dict, [(seed_path, find_seed(seed_dir, src_1)),
+                             (seed_path, find_seed(seed_dir, src_2))]
 
     match = QUEUE_MUTATE_SEED_SYNC_RE.match(seed_name)
     if match:
         # Seed synced from another fuzzer node
         mutate_dict = fix_regex_dict(match.groupdict())
+        mutate_dict['path'] = seed_path
+
         seed_dir = os.path.join(os.path.dirname(os.path.dirname(seed_dir)),
                                 mutate_dict['syncing_party'], 'queue')
-        parent_seed = find_seed(seed_dir, mutate_dict['src'])
+        src = mutate_dict['src']
 
-        mutate_dict['path'] = seed_path
-        mutate_dict['src'] = [gen_mutation_chain(parent_seed)]
-
-        return mutate_dict
+        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
 
     raise Exception('Failed to find parent seed for `%s`' % seed_name)
 
@@ -209,55 +200,71 @@ def create_node_label(mutate_dict):
     return os.path.basename(mutate_dict['path'])
 
 
+def node_shape(mutate_dict):
+    """Decide the Graphviz node shape."""
+    if is_crash_seed(mutate_dict):
+        return 'hexagon'
+    elif 'orig_seed' in mutate_dict:
+        return 'rect'
+
+    return 'oval'
+
+
 def is_crash_seed(mutate_dict):
     """Returns `True` if the given mutation dict is for a crashing seed."""
     return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
 
 
-def create_graph(mutation_chains, graph=None):
-    """Recursively produce a graphviz graph of the mutation chain(s)."""
-    if not graph:
-        graph = nx.DiGraph()
+def gen_mutation_graph(seed_path):
+    """
+    Generate a mutation graph (this _should_ be a DAG) basd on the given seed.
+    """
 
-    for mutation_chain in mutation_chains:
-        mutation_chain_id = mutation_chain['id']
-        node_shape = 'hexagon' if is_crash_seed(mutation_chain) else 'oval'
+    if not os.path.isfile(seed_path):
+        raise Exception('%s is not a valid seed file' % seed_path)
 
-        graph.add_node(mutation_chain_id, shape=node_shape,
-                       label='"%s"' % create_node_label(mutation_chain))
+    seed_path = os.path.realpath(seed_path)
+    mutate_dict, seed_stack = get_mutation_dict(seed_path)
 
-        for src in mutation_chain.get('src', []):
-            if 'orig_seed' in src:
-                orig_seed = src['orig_seed']
-                graph.add_node(orig_seed, shape='rect',
-                               label='"%s"' % create_node_label(src))
-                graph.add_edge(orig_seed, mutation_chain_id,
-                               label='"%s"' % create_edge_label(mutation_chain))
-            else:
-                src_id = src['id']
-                graph.add_node(src_id, label='"%s"' % create_node_label(src))
-                graph.add_edge(src_id, mutation_chain_id,
-                               label='"%s"' % create_edge_label(mutation_chain))
-                create_graph([src], graph)
+    mutate_graph = nx.DiGraph()
+    mutate_graph.add_node(mutate_dict['path'], shape=node_shape(mutate_dict),
+                          label='"%s"' % create_node_label(mutate_dict))
 
-    return graph
+    # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
+    # "orig" seed, parent seed becomes None and we stop
+    while seed_stack:
+        prev_seed_path, seed_path = seed_stack.pop()
+        if not seed_path:
+            continue
+
+        mutate_dict, parent_seeds = get_mutation_dict(seed_path)
+        node = '"%s"' % mutate_dict['path']
+        prev_node = '"%s"' % prev_seed_path
+
+        # If we've already seen this seed before, don't look at it again.
+        # Otherwise we'll end up in an infinite loop
+        if node in mutate_graph:
+            continue
+
+        mutate_graph.add_node(node, shape=node_shape(mutate_dict),
+                              label='"%s"' % create_node_label(mutate_dict))
+        mutate_graph.add_edge(node, prev_node,
+                              label='"%s"' % create_edge_label(mutate_dict))
+
+        seed_stack.extend(parent_seeds)
+
+    return mutate_graph
 
 
 def main():
     """The main function."""
     args = parse_args()
-    mutation_chains = []
 
-    sys.setrecursionlimit(args.stack_limit)
-
+    mutation_graph = nx.DiGraph()
     for seed_path in args.seed_path:
-        mutation_chain = gen_mutation_chain(seed_path)
-        mutation_chains.append(mutation_chain)
+        mutation_graph.update(gen_mutation_graph(seed_path))
 
-    if args.output_format == 'json':
-        print(json.dumps(mutation_chains))
-    elif args.output_format == 'dot':
-        write_dot(create_graph(mutation_chains), sys.stdout)
+    write_dot(mutation_graph, sys.stdout)
 
 
 if __name__ == '__main__':
