@@ -264,7 +264,7 @@ def to_dot_graph(graph):
         node_mapping[node] = count
 
     for u, v in graph.edges():
-        mutate_dict = graph.node[u]['mutation']
+        mutate_dict = graph.nodes[u]['mutation']
         dot_graph.add_edge(node_mapping[u], node_mapping[v],
                            label='"%s"' % create_edge_label(mutate_dict))
 
