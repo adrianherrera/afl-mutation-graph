@@ -227,8 +227,7 @@ def gen_mutation_graph(seed_path):
     mutate_dict, seed_stack = get_mutation_dict(seed_path)
 
     mutate_graph = nx.DiGraph()
-    mutate_graph.add_node(mutate_dict['path'], shape=node_shape(mutate_dict),
-                          label='"%s"' % create_node_label(mutate_dict))
+    mutate_graph.add_node(mutate_dict['path'], mutation=mutate_dict)
 
     # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
     # "orig" seed, parent seed becomes None and we stop
@@ -238,22 +237,38 @@ def gen_mutation_graph(seed_path):
             continue
 
         mutate_dict, parent_seeds = get_mutation_dict(seed_path)
-        node = '"%s"' % mutate_dict['path']
-        prev_node = '"%s"' % prev_seed_path
+        node = mutate_dict['path']
+        prev_node = prev_seed_path
 
         # If we've already seen this seed before, don't look at it again.
         # Otherwise we'll end up in an infinite loop
         if node in mutate_graph:
             continue
 
-        mutate_graph.add_node(node, shape=node_shape(mutate_dict),
-                              label='"%s"' % create_node_label(mutate_dict))
-        mutate_graph.add_edge(node, prev_node,
-                              label='"%s"' % create_edge_label(mutate_dict))
+        mutate_graph.add_node(node, mutation=mutate_dict)
+        mutate_graph.add_edge(node, prev_node)
 
         seed_stack.extend(parent_seeds)
 
     return mutate_graph
+
+
+def to_dot_graph(graph):
+    """Generate a graph that is more ammenable for Graphviz's DOT format."""
+    dot_graph = nx.DiGraph()
+    node_mapping = {}
+
+    for count, (node, mutate_dict) in enumerate(graph.nodes(data='mutation')):
+        dot_graph.add_node(count, shape=node_shape(mutate_dict),
+                           label='"%s"' % create_node_label(mutate_dict))
+        node_mapping[node] = count
+
+    for u, v in graph.edges():
+        mutate_dict = graph.node[u]['mutation']
+        dot_graph.add_edge(node_mapping[u], node_mapping[v],
+                           label='"%s"' % create_edge_label(mutate_dict))
+
+    return dot_graph
 
 
 def main():
@@ -264,7 +279,7 @@ def main():
     for seed_path in args.seed_path:
         mutation_graph.update(gen_mutation_graph(seed_path))
 
-    write_dot(mutation_graph, sys.stdout)
+    write_dot(to_dot_graph(mutation_graph), sys.stdout)
 
 
 if __name__ == '__main__':
