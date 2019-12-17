@@ -104,6 +104,29 @@ def find_seed(seed_dir, seed_id):
     return seed_files[0]
 
 
+def get_parent_seeds(mutate_dict):
+    """Get a list of parent seeds from the given mutation dictionary."""
+    seed_dir = os.path.dirname(mutate_dict['path'])
+
+    # If the seed is a crash, move across to the queue
+    if is_crash_seed(mutate_dict):
+        seed_dir = os.path.join(os.path.dirname(seed_dir), 'queue')
+
+    if 'orig_seed' in mutate_dict:
+        return []
+    elif 'syncing_party' in mutate_dict:
+        seed_dir = os.path.join(os.path.dirname(os.path.dirname(seed_dir)),
+                                mutate_dict['syncing_party'], 'queue')
+        return [find_seed(seed_dir, mutate_dict['src'])]
+    elif 'src_1' in mutate_dict:
+        return [find_seed(seed_dir, mutate_dict['src_1']),
+                find_seed(seed_dir, mutate_dict['src_2'])]
+    elif 'src' in mutate_dict:
+        return [find_seed(seed_dir, mutate_dict['src'])]
+
+    raise Exception('Invalid mutation dictionary %s' % mutate_dict)
+
+
 def get_mutation_dict(seed_path):
     """
     Parse out a mutation dict from the given seed.
@@ -127,7 +150,7 @@ def get_mutation_dict(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         mutate_dict['path'] = seed_path
 
-        return mutate_dict, [(seed_path, None)]
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_RE.match(seed_name)
     if match:
@@ -135,9 +158,7 @@ def get_mutation_dict(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         mutate_dict['path'] = seed_path
 
-        src = mutate_dict['src']
-
-        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_HAVOC_RE.match(seed_name)
     if match:
@@ -145,9 +166,7 @@ def get_mutation_dict(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         mutate_dict['path'] = seed_path
 
-        src = mutate_dict['src']
-
-        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_SPLICE_RE.match(seed_name)
     if match:
@@ -155,11 +174,7 @@ def get_mutation_dict(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         mutate_dict['path'] = seed_path
 
-        src_1 = mutate_dict['src_1']
-        src_2 = mutate_dict['src_2']
-
-        return mutate_dict, [(seed_path, find_seed(seed_dir, src_1)),
-                             (seed_path, find_seed(seed_dir, src_2))]
+        return mutate_dict
 
     match = QUEUE_MUTATE_SEED_SYNC_RE.match(seed_name)
     if match:
@@ -167,13 +182,58 @@ def get_mutation_dict(seed_path):
         mutate_dict = fix_regex_dict(match.groupdict())
         mutate_dict['path'] = seed_path
 
-        seed_dir = os.path.join(os.path.dirname(os.path.dirname(seed_dir)),
-                                mutate_dict['syncing_party'], 'queue')
-        src = mutate_dict['src']
-
-        return mutate_dict, [(seed_path, find_seed(seed_dir, src))]
+        return mutate_dict
 
     raise Exception('Failed to find parent seed for `%s`' % seed_name)
+
+
+def is_crash_seed(mutate_dict):
+    """Returns `True` if the given mutation dict is for a crashing seed."""
+    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
+
+
+def gen_mutation_graph(seed_path):
+    """
+    Generate a mutation graph (this _should_ be a DAG) basd on the given seed.
+    """
+
+    if not os.path.isfile(seed_path):
+        raise Exception('%s is not a valid seed file' % seed_path)
+
+    get_seed_stack = lambda sp, md: [(sp, ps) for ps in get_parent_seeds(md)]
+
+    seed_path = os.path.realpath(seed_path)
+    mutate_dict = get_mutation_dict(seed_path)
+    seed_stack = get_seed_stack(seed_path, mutate_dict)
+
+    mutate_graph = nx.DiGraph()
+    mutate_graph.add_node(mutate_dict['path'], mutation=mutate_dict)
+
+    # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
+    # "orig" seed, parent seed becomes None and we stop
+    while seed_stack:
+        prev_seed_path, seed_path = seed_stack.pop()
+
+        mutate_dict = get_mutation_dict(seed_path)
+        node = mutate_dict['path']
+        prev_node = prev_seed_path
+
+        # If we've already seen this seed before, don't look at it again.
+        # Otherwise we'll end up in an infinite loop
+        if node in mutate_graph:
+            continue
+
+        mutate_graph.add_node(node, mutation=get_mutation_dict(prev_seed_path))
+        mutate_graph.add_edge(node, prev_node)
+
+        seed_stack.extend(get_seed_stack(seed_path, mutate_dict))
+
+    return mutate_graph
+
+
+def create_node_label(mutate_dict):
+    """Create a meaningful label for a node in the mutation graph."""
+    return os.path.basename(mutate_dict['path'])
 
 
 def create_edge_label(mutate_dict):
@@ -195,62 +255,14 @@ def create_edge_label(mutate_dict):
     return ', '.join(label_elems)
 
 
-def create_node_label(mutate_dict):
-    """Create a meaningful label for a node in the mutation graph."""
-    return os.path.basename(mutate_dict['path'])
-
-
 def node_shape(mutate_dict):
     """Decide the Graphviz node shape."""
     if is_crash_seed(mutate_dict):
         return 'hexagon'
     elif 'orig_seed' in mutate_dict:
         return 'rect'
-
-    return 'oval'
-
-
-def is_crash_seed(mutate_dict):
-    """Returns `True` if the given mutation dict is for a crashing seed."""
-    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
-
-
-def gen_mutation_graph(seed_path):
-    """
-    Generate a mutation graph (this _should_ be a DAG) basd on the given seed.
-    """
-
-    if not os.path.isfile(seed_path):
-        raise Exception('%s is not a valid seed file' % seed_path)
-
-    seed_path = os.path.realpath(seed_path)
-    mutate_dict, seed_stack = get_mutation_dict(seed_path)
-
-    mutate_graph = nx.DiGraph()
-    mutate_graph.add_node(mutate_dict['path'], mutation=mutate_dict)
-
-    # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
-    # "orig" seed, parent seed becomes None and we stop
-    while seed_stack:
-        prev_seed_path, seed_path = seed_stack.pop()
-        if not seed_path:
-            continue
-
-        mutate_dict, parent_seeds = get_mutation_dict(seed_path)
-        node = mutate_dict['path']
-        prev_node = prev_seed_path
-
-        # If we've already seen this seed before, don't look at it again.
-        # Otherwise we'll end up in an infinite loop
-        if node in mutate_graph:
-            continue
-
-        mutate_graph.add_node(node, mutation=mutate_dict)
-        mutate_graph.add_edge(node, prev_node)
-
-        seed_stack.extend(parent_seeds)
-
-    return mutate_graph
+    else:
+        return 'oval'
 
 
 def to_dot_graph(graph):
