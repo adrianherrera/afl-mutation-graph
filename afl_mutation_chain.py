@@ -65,6 +65,8 @@ def parse_args():
     """Parse command-line arguments."""
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
+    parser.add_argument('-o', '--output', required=False,
+                        help='Output path for DOT file')
     parser.add_argument('seed_path', nargs='+',
                         help='Path to the seed(s) to recover mutation chain')
 
@@ -104,12 +106,25 @@ def find_seed(seed_dir, seed_id):
     return seed_files[0]
 
 
+def is_crash(mutate_dict):
+    """Returns `True` if the given mutation dict is for a crashing input."""
+    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
+
+
+def is_seed(mutate_dict):
+    """
+    Returns `True` if the given mutation dict is for a seed from the fuzzing
+    corpus.
+    """
+    return 'orig_seed' in mutate_dict
+
+
 def get_parent_seeds(mutate_dict):
     """Get a list of parent seeds from the given mutation dictionary."""
     seed_dir = os.path.dirname(mutate_dict['path'])
 
     # If the seed is a crash, move across to the queue
-    if is_crash_seed(mutate_dict):
+    if is_crash(mutate_dict):
         seed_dir = os.path.join(os.path.dirname(seed_dir), 'queue')
 
     if 'orig_seed' in mutate_dict:
@@ -187,11 +202,6 @@ def get_mutation_dict(seed_path):
     raise Exception('Failed to find parent seed for `%s`' % seed_name)
 
 
-def is_crash_seed(mutate_dict):
-    """Returns `True` if the given mutation dict is for a crashing seed."""
-    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
-
-
 def gen_mutation_graph(seed_path):
     """
     Generate a mutation graph (this _should_ be a DAG) basd on the given seed.
@@ -257,9 +267,9 @@ def create_edge_label(mutate_dict):
 
 def node_shape(mutate_dict):
     """Decide the Graphviz node shape."""
-    if is_crash_seed(mutate_dict):
+    if is_crash(mutate_dict):
         return 'hexagon'
-    elif 'orig_seed' in mutate_dict:
+    elif is_seed(mutate_dict):
         return 'rect'
     else:
         return 'oval'
@@ -283,15 +293,43 @@ def to_dot_graph(graph):
     return dot_graph
 
 
+def get_path_stats(graph, sources, sinks):
+    """
+    Get the longest and shortest paths through the graph from a set of source
+    nodes to a set of sink nodes.
+    """
+    paths = [path for sink in sinks
+             for source in sources
+             for path in nx.all_simple_paths(graph, source, sink)]
+    len_calc = lambda f: len(f(paths, key=lambda p: len(p))) + 1
+
+    return len_calc(min), len_calc(max)
+
+def print_stats(graph):
+    """Print statistics about the mutation graph."""
+    sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
+    sinks = [n for n, out_degree in graph.out_degree() if out_degree == 0]
+    min_len, max_len = get_path_stats(graph, sources, sinks)
+
+    print('num. source nodes: %d' % len(sources))
+    print('num. sink nodes: %d' % len(sinks))
+    print('shortest mutation chain: %d' % min_len)
+    print('longest mutation chain: %d' % max_len)
+
+
 def main():
     """The main function."""
     args = parse_args()
 
     mutation_graph = nx.DiGraph()
+
     for seed_path in args.seed_path:
         mutation_graph.update(gen_mutation_graph(seed_path))
 
-    write_dot(to_dot_graph(mutation_graph), sys.stdout)
+    print_stats(mutation_graph)
+
+    if args.output:
+        write_dot(to_dot_graph(mutation_graph), args.output)
 
 
 if __name__ == '__main__':

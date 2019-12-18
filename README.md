@@ -7,7 +7,7 @@ DOT format.
 To graph the relationships between all queue inputs:
 
 ```bash
-python afl_mutation_chain.py $(find queue/ -wholename 'queue/id:*') > queue.dot
+python afl_mutation_chain.py $(find queue/ -wholename 'queue/id:*') -o queue.dot
 dot -Tpdf queue.dot > queue.pdf
 ```
 
