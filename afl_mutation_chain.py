@@ -220,7 +220,7 @@ def gen_mutation_graph(seed_path):
 
         # If we've already seen this seed before, don't look at it again.
         # Otherwise we'll end up in an infinite loop
-        if node in mutate_graph:
+        if mutate_graph.has_edge(node, prev_node):
             continue
 
         mutate_graph.add_node(node, mutation=mutate_dict)
