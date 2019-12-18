@@ -310,9 +310,11 @@ def print_stats(graph):
     sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
     sinks = [n for n, out_degree in graph.out_degree() if out_degree == 0]
     min_len, max_len = get_path_stats(graph, sources, sinks)
+    num_connected_components = nx.number_weakly_connected_components(graph)
 
     print('num. source nodes: %d' % len(sources))
     print('num. sink nodes: %d' % len(sinks))
+    print('num. connected components: %d' % num_connected_components)
     print('shortest mutation chain: %d' % min_len)
     print('longest mutation chain: %d' % max_len)
 
