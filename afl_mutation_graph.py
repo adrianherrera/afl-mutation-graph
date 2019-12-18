@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 """
-Reconstructs an approximate AFL mutation chain based on the file names of seeds
+Reconstructs an approximate AFL mutation graph based on the file names of seeds
 in a queue.
 
- Author: Adrian Herrera
+Author: Adrian Herrera
 """
 
 
@@ -63,14 +63,14 @@ CONVERT_TO_INTS = ('id', 'sig', 'src', 'src_1', 'src_2', 'pos', 'rep', 'val')
 
 def parse_args():
     """Parse command-line arguments."""
-    parser = ArgumentParser(description='Recover (approximate) mutation chain '
-                                        'from an AFL seed')
+    parser = ArgumentParser(description='Recover (approximate) mutation graph'
+                                        'from a set of AFL seeds')
     parser.add_argument('-s', '--stats', required=False, action='store_true',
-                        help='Print statistics about the mutation chain')
+                        help='Print statistics about the mutation graph')
     parser.add_argument('-o', '--output', required=False,
                         help='Output path for DOT file')
     parser.add_argument('seed_path', nargs='+',
-                        help='Path to the seed(s) to recover mutation chain')
+                        help='Path to the seed(s) to recover mutation graph')
 
     return parser.parse_args()
 
