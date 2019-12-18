@@ -65,6 +65,8 @@ def parse_args():
     """Parse command-line arguments."""
     parser = ArgumentParser(description='Recover (approximate) mutation chain '
                                         'from an AFL seed')
+    parser.add_argument('-s', '--stats', required=False, action='store_true',
+                        help='Print statistics about the mutation chain')
     parser.add_argument('-o', '--output', required=False,
                         help='Output path for DOT file')
     parser.add_argument('seed_path', nargs='+',
@@ -330,7 +332,8 @@ def main():
     for seed_path in args.seed_path:
         mutation_graph.update(gen_mutation_graph(seed_path))
 
-    print_stats(mutation_graph)
+    if args.stats:
+        print_stats(mutation_graph)
 
     if args.output:
         write_dot(to_dot_graph(mutation_graph), args.output)
