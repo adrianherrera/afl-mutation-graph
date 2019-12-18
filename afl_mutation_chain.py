@@ -223,7 +223,7 @@ def gen_mutation_graph(seed_path):
         if node in mutate_graph:
             continue
 
-        mutate_graph.add_node(node, mutation=get_mutation_dict(prev_seed_path))
+        mutate_graph.add_node(node, mutation=mutate_dict)
         mutate_graph.add_edge(node, prev_node)
 
         seed_stack.extend(get_seed_stack(seed_path, mutate_dict))
@@ -276,7 +276,7 @@ def to_dot_graph(graph):
         node_mapping[node] = count
 
     for u, v in graph.edges():
-        mutate_dict = graph.nodes[u]['mutation']
+        mutate_dict = graph.nodes[v]['mutation']
         dot_graph.add_edge(node_mapping[u], node_mapping[v],
                            label='"%s"' % create_edge_label(mutate_dict))
 
