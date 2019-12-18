@@ -297,6 +297,8 @@ def get_path_stats(graph, sources, sinks):
     """
     Get the longest and shortest paths through the graph from a set of source
     nodes to a set of sink nodes.
+
+    Note that this is not very accurate due to splices!!
     """
     paths = [path for sink in sinks
              for source in sources
