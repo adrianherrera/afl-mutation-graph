@@ -309,6 +309,7 @@ def get_path_stats(graph, sources, sinks):
 
     return len_calc(min), len_calc(max)
 
+
 def print_stats(graph):
     """Print statistics about the mutation graph."""
     sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
