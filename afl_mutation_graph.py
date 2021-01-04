@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 """
 Reconstructs an approximate AFL mutation graph based on the file names of seeds
@@ -8,13 +8,10 @@ Author: Adrian Herrera
 """
 
 
-from __future__ import print_function
-
-from argparse import ArgumentParser
-import glob
-import os
+from argparse import ArgumentParser, Namespace
+from pathlib import Path
+from typing import List, Tuple
 import re
-import sys
 
 import networkx as nx
 try:
@@ -61,241 +58,227 @@ OP_MAPPING = {
 CONVERT_TO_INTS = ('id', 'sig', 'src', 'src_1', 'src_2', 'pos', 'rep', 'val')
 
 
-def parse_args():
+def parse_args() -> Namespace:
     """Parse command-line arguments."""
     parser = ArgumentParser(description='Recover (approximate) mutation graph'
                                         'from a set of AFL seeds')
     parser.add_argument('-s', '--stats', required=False, action='store_true',
                         help='Print statistics about the mutation graph')
-    parser.add_argument('-o', '--output', required=False,
-                        help='Output path for DOT file')
-    parser.add_argument('seed_path', nargs='+',
+    parser.add_argument('-o', '--output', required=False, metavar='DOT',
+                        type=Path, help='Output path for DOT file')
+    parser.add_argument('seed_path', nargs='+', metavar='SEED', type=Path,
                         help='Path to the seed(s) to recover mutation graph')
-
     return parser.parse_args()
 
 
-def fix_regex_dict(mutate_dict):
+def fix_regex_dict(mutation: dict) -> dict:
     """
     Fix the groupdict returned by the regex match.
 
     Convert strings to int, etc.
     """
     # Remove None values
-    mutate_dict = {k:v for k, v in mutate_dict.items() if v is not None}
+    mutation = {k:v for k, v in mutation.items() if v is not None}
 
     # Convert ints
     for key in CONVERT_TO_INTS:
-        if key in mutate_dict:
-            mutate_dict[key] = int(mutate_dict[key])
+        if key in mutation:
+            mutation[key] = int(mutation[key])
 
     # Expand op names to full stage names
-    if 'op' in mutate_dict:
-        mutate_dict['op'] = OP_MAPPING[mutate_dict['op']]
+    if 'op' in mutation:
+        mutation['op'] = OP_MAPPING[mutation['op']]
 
-    return mutate_dict
+    return mutation
 
 
-def find_seed(seed_dir, seed_id):
+def find_seed(seed_dir: Path, seed_id: int):
     """Find a seed file with the given ID."""
-    seed_path = os.path.join(seed_dir, 'id[:_]%06d,*' % seed_id)
-    seed_files = glob.glob(seed_path)
+    seed_files = seed_dir.glob('id[:_]%06d,*' % seed_id)
 
     if not seed_files:
         raise Exception('Could not find seed %s in %s' % (seed_id, seed_dir))
 
-    # Each seed should have a unique ID
-    return seed_files[0]
+    # Each seed should have a unique ID, so there should only be one result
+    return next(seed_files)
 
 
-def is_crash(mutate_dict):
+def is_crash(mutation: dict) -> bool:
     """Returns `True` if the given mutation dict is for a crashing input."""
-    return 'crashes' in os.path.basename(os.path.dirname(mutate_dict['path']))
+    return 'crashes' in mutation['path'].parent.name
 
 
-def is_seed(mutate_dict):
+def is_seed(mutation: dict) -> bool:
     """
     Returns `True` if the given mutation dict is for a seed from the fuzzing
     corpus.
     """
-    return 'orig_seed' in mutate_dict
+    return 'orig_seed' in mutation
 
 
-def get_parent_seeds(mutate_dict):
+def get_parent_seeds(mutation: dict) -> List[Path]:
     """Get a list of parent seeds from the given mutation dictionary."""
-    seed_dir = os.path.dirname(mutate_dict['path'])
+    seed_dir = mutation['path'].parent
 
-    # If the seed is a crash, move across to the queue
-    if is_crash(mutate_dict):
-        seed_dir = os.path.join(os.path.dirname(seed_dir), 'queue')
+    # If the seed is a crash, move across to the queue directory
+    if is_crash(mutation):
+        seed_dir = seed_dir.parent / 'queue'
 
-    if 'orig_seed' in mutate_dict:
+    if 'orig_seed' in mutation:
         return []
-    elif 'syncing_party' in mutate_dict:
-        seed_dir = os.path.join(os.path.dirname(os.path.dirname(seed_dir)),
-                                mutate_dict['syncing_party'], 'queue')
-        return [find_seed(seed_dir, mutate_dict['src'])]
-    elif 'src_1' in mutate_dict:
-        return [find_seed(seed_dir, mutate_dict['src_1']),
-                find_seed(seed_dir, mutate_dict['src_2'])]
-    elif 'src' in mutate_dict:
-        return [find_seed(seed_dir, mutate_dict['src'])]
+    if 'syncing_party' in mutation:
+        seed_dir = seed_dir.parents[1] / mutation['syncing_party'] / 'queue'
+        return [find_seed(seed_dir, mutation['src'])]
+    if 'src_1' in mutation:
+        return [find_seed(seed_dir, mutation['src_1']),
+                find_seed(seed_dir, mutation['src_2'])]
+    if 'src' in mutation:
+        return [find_seed(seed_dir, mutation['src'])]
 
-    raise Exception('Invalid mutation dictionary %s' % mutate_dict)
+    raise Exception('Invalid mutation dictionary %r' % mutation)
 
 
-def get_mutation_dict(seed_path):
-    """
-    Parse out a mutation dict from the given seed.
+def get_mutation_dict(seed: Path) -> dict:
+    """Parse out a mutation dict from the given seed."""
+    # If the seed is a crash, move across to the queue directory
+    seed_dir = seed.parent
+    if seed_dir.name == 'crashes':
+        seed_dir = seed_dir.parent / 'queue'
 
-    Returns a tuple of:
-
-        1. Mutation dict
-        2. List of (current seed, parent) tuples
-    """
-    seed_dir, seed_name = os.path.split(seed_path)
-    seed_path = os.path.realpath(seed_path)
-
-    # If the seed is a crash, move across to the queue
-    fuzz_dir, seed_dir_name = os.path.split(seed_dir)
-    if seed_dir_name == 'crashes':
-        seed_dir = os.path.join(fuzz_dir, 'queue')
-
+    seed_name = seed.name
     match = QUEUE_ORIG_SEED_RE.match(seed_name)
     if match:
         # We've reached the end of the chain
-        mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+        mutation = fix_regex_dict(match.groupdict())
+        mutation['path'] = seed
 
-        return mutate_dict
+        return mutation
 
     match = QUEUE_MUTATE_SEED_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
-        mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+        mutation = fix_regex_dict(match.groupdict())
+        mutation['path'] = seed
 
-        return mutate_dict
+        return mutation
 
     match = QUEUE_MUTATE_SEED_HAVOC_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
-        mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+        mutation = fix_regex_dict(match.groupdict())
+        mutation['path'] = seed
 
-        return mutate_dict
+        return mutation
 
     match = QUEUE_MUTATE_SEED_SPLICE_RE.match(seed_name)
     if match:
         # Spliced seeds have two parents. Recurse on both
-        mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+        mutation = fix_regex_dict(match.groupdict())
+        mutation['path'] = seed
 
-        return mutate_dict
+        return mutation
 
     match = QUEUE_MUTATE_SEED_SYNC_RE.match(seed_name)
     if match:
         # Seed synced from another fuzzer node
-        mutate_dict = fix_regex_dict(match.groupdict())
-        mutate_dict['path'] = seed_path
+        mutation = fix_regex_dict(match.groupdict())
+        mutation['path'] = seed
 
-        return mutate_dict
+        return mutation
 
     raise Exception('Failed to find parent seed for `%s`' % seed_name)
 
 
-def gen_mutation_graph(seed_path):
+def gen_mutation_graph(seed: Path) -> nx.DiGraph:
     """
     Generate a mutation graph (this _should_ be a DAG) basd on the given seed.
     """
+    def get_seed_stack(seed: Path, mutation: dict) -> List[Tuple[Path, Path]]:
+        return [(seed, parent_seed) for parent_seed in
+                get_parent_seeds(mutation)]
 
-    if not os.path.isfile(seed_path):
-        raise Exception('%s is not a valid seed file' % seed_path)
-
-    get_seed_stack = lambda sp, md: [(sp, ps) for ps in get_parent_seeds(md)]
-
-    seed_path = os.path.realpath(seed_path)
-    mutate_dict = get_mutation_dict(seed_path)
-    seed_stack = get_seed_stack(seed_path, mutate_dict)
+    mutation = get_mutation_dict(seed)
+    seed_stack = get_seed_stack(seed, mutation)
 
     mutate_graph = nx.DiGraph()
-    mutate_graph.add_node(mutate_dict['path'], mutation=mutate_dict)
+    mutate_graph.add_node(mutation['path'], mutation=mutation)
 
     # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
     # "orig" seed, parent seed becomes None and we stop
     while seed_stack:
-        prev_seed_path, seed_path = seed_stack.pop()
+        prev_seed, seed = seed_stack.pop()
 
-        mutate_dict = get_mutation_dict(seed_path)
-        node = mutate_dict['path']
-        prev_node = prev_seed_path
+        mutation = get_mutation_dict(seed)
+        node = mutation['path']
+        prev_node = prev_seed
 
         # If we've already seen this seed before, don't look at it again.
         # Otherwise we'll end up in an infinite loop
         if mutate_graph.has_edge(node, prev_node):
             continue
 
-        mutate_graph.add_node(node, mutation=mutate_dict)
+        mutate_graph.add_node(node, mutation=mutation)
         mutate_graph.add_edge(node, prev_node)
 
-        seed_stack.extend(get_seed_stack(seed_path, mutate_dict))
+        seed_stack.extend(get_seed_stack(seed, mutation))
 
     return mutate_graph
 
 
-def create_node_label(mutate_dict):
+def create_node_label(mutation: dict) -> str:
     """Create a meaningful label for a node in the mutation graph."""
-    return os.path.basename(mutate_dict['path'])
+    return mutation['path'].name
 
 
-def create_edge_label(mutate_dict):
+def create_edge_label(mutation: dict) -> str:
     """Create a meaningful label for an edge in the mutation graph."""
     label_elems = []
 
-    if 'op' in mutate_dict:
-        label_elems.append('op: %s' % mutate_dict['op'])
-    if 'pos' in mutate_dict:
-        label_elems.append('pos: %d' % mutate_dict['pos'])
-    if 'val' in mutate_dict:
-        label_elems.append('val: %s%d' % (mutate_dict.get('val_type', ''),
-                                          mutate_dict['val']))
-    if 'rep' in mutate_dict:
-        label_elems.append('rep: %d' % mutate_dict['rep'])
-    if 'syncing_party' in mutate_dict:
-        label_elems.append('sync: %s' % mutate_dict['syncing_party'])
+    if 'op' in mutation:
+        label_elems.append('op: %s' % mutation['op'])
+    if 'pos' in mutation:
+        label_elems.append('pos: %d' % mutation['pos'])
+    if 'val' in mutation:
+        label_elems.append('val: %s%d' % (mutation.get('val_type', ''),
+                                          mutation['val']))
+    if 'rep' in mutation:
+        label_elems.append('rep: %d' % mutation['rep'])
+    if 'syncing_party' in mutation:
+        label_elems.append('sync: %s' % mutation['syncing_party'])
 
     return ', '.join(label_elems)
 
 
-def node_shape(mutate_dict):
+def node_shape(mutation: dict) -> str:
     """Decide the Graphviz node shape."""
-    if is_crash(mutate_dict):
+    if is_crash(mutation):
         return 'hexagon'
-    elif is_seed(mutate_dict):
+    if is_seed(mutation):
         return 'rect'
-    else:
-        return 'oval'
+
+    return 'oval'
 
 
-def to_dot_graph(graph):
+def to_dot_graph(graph: nx.DiGraph) -> nx.DiGraph:
     """Generate a graph that is more ammenable for Graphviz's DOT format."""
     dot_graph = nx.DiGraph()
     node_mapping = {}
 
-    for count, (node, mutate_dict) in enumerate(graph.nodes(data='mutation')):
-        dot_graph.add_node(count, shape=node_shape(mutate_dict),
-                           label='"%s"' % create_node_label(mutate_dict))
+    for count, (node, mutation) in enumerate(graph.nodes(data='mutation')):
+        dot_graph.add_node(count, shape=node_shape(mutation),
+                           label='"%s"' % create_node_label(mutation))
         node_mapping[node] = count
 
     for u, v in graph.edges():
-        mutate_dict = graph.nodes[v]['mutation']
+        mutation = graph.nodes[v]['mutation']
         dot_graph.add_edge(node_mapping[u], node_mapping[v],
-                           label='"%s"' % create_edge_label(mutate_dict))
+                           label='"%s"' % create_edge_label(mutation))
 
     return dot_graph
 
 
-def get_path_stats(graph, sources, sinks):
+def get_path_stats(graph: nx.DiGraph, sources: List[str],
+                   sinks: List[str]) -> (int, int):
     """
     Get the longest and shortest paths through the graph from a set of source
     nodes to a set of sink nodes.
@@ -310,7 +293,7 @@ def get_path_stats(graph, sources, sinks):
     return len_calc(min), len_calc(max)
 
 
-def print_stats(graph):
+def print_stats(graph: nx.DiGraph) -> None:
     """Print statistics about the mutation graph."""
     sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
     sinks = [n for n, out_degree in graph.out_degree() if out_degree == 0]
@@ -331,7 +314,8 @@ def main():
     mutation_graph = nx.DiGraph()
 
     for seed_path in args.seed_path:
-        mutation_graph.update(gen_mutation_graph(seed_path))
+        seed_graph = gen_mutation_graph(seed_path)
+        mutation_graph.update(seed_graph)
 
     if args.stats:
         print_stats(mutation_graph)
