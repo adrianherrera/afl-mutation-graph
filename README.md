@@ -2,8 +2,8 @@
 
 Recovers an approximation of the mutation graph (specifically, a DAG) that led
 to a particular seed (or set of seeds) in an
-[AFL](http://lcamtuf.coredump.cx/afl/) queue. The graph can be saved in Graphviz
-DOT format.
+[AFL](http://lcamtuf.coredump.cx/afl/)/]AFL++](https://aflplus.plus/) queue.
+The graph can be saved in Graphviz DOT format.
 
 To graph the relationships between all queue inputs:
 

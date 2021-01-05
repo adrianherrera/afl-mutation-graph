@@ -11,7 +11,9 @@ Author: Adrian Herrera
 from argparse import ArgumentParser, Namespace
 from pathlib import Path
 from typing import List, Tuple
+import logging
 import re
+import sys
 
 import networkx as nx
 try:
@@ -27,10 +29,9 @@ except ImportError:
 
 
 # Regexs for extracting mutation information from seeds in the AFL queue
-QUEUE_ORIG_SEED_RE = re.compile(r'id[:_](?P<id>\d+),orig[:_](?P<orig_seed>\w+)')
-QUEUE_MUTATE_SEED_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src>\d+),op[:_](?P<op>(?!havoc|splice)\w+),pos[:_](?P<pos>\d+)(?:,val[:_](?P<val_type>[\w:_]+)?(?P<val>[+-]\d+))?')
-QUEUE_MUTATE_SEED_HAVOC_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src>\d+),op[:_](?P<op>havoc),rep[:_](?P<rep>\d+)')
-QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src_1>\d+)\+(?P<src_2>\d+),op[:_](?P<op>splice),rep[:_](?P<rep>\d+)')
+QUEUE_ORIG_SEED_RE = re.compile(r'id[:_](?P<id>\d+),(?:time[:_](?P<time>\d+),)?orig[:_](?P<orig_seed>\w+)')
+QUEUE_MUTATE_SEED_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src>\d+),(?:time[:_](?P<time>\d+),)?op[:_](?P<op>(?!.*splice)\w+)(?:,pos[:_](?P<pos>\d+))?(?:,val[:_](?P<val_type>[\w:_]+)?(?P<val>[+-]\d+))?(?:,rep[:_](?P<rep>\d+))?')
+QUEUE_MUTATE_SEED_SPLICE_RE = re.compile(r'id[:_](?P<id>\d+),(?:sig[:_](?P<sig>\d+),)?src[:_](?P<src_1>\d+)\+(?P<src_2>\d+),(?:time[:_](?P<time>\d+),)?op[:_](?P<op>.*splice),rep[:_](?P<rep>\d+)')
 QUEUE_MUTATE_SEED_SYNC_RE = re.compile(r'id[:_](?P<id>\d+),sync[:_](?P<syncing_party>[\w-]+),src[:_](?P<src>\d+)')
 
 # Maps short stag names to full stage names
@@ -52,20 +53,40 @@ OP_MAPPING = {
     'ext_AO': 'auto extras (over)',
     'havoc': 'havoc',
     'splice': 'splice',
+
+    # AFL++ operators
+    'colorization': 'colorization',
+    'MOpt_core_havoc': 'MOpt core havoc',
+    'MOpt_core_splice': 'MOpt core splice',
+    'MOpt_havoc': 'MOpt havoc',
+    'MOpt_splice': 'MOpt splice',
 }
 
 # Regex elements to convert to ints
 CONVERT_TO_INTS = ('id', 'sig', 'src', 'src_1', 'src_2', 'pos', 'rep', 'val')
 
+# Logging
+FORMATTER = logging.Formatter('[%(asctime)s] %(levelname)s: %(message)s')
+logger = logging.getLogger()
+
 
 def parse_args() -> Namespace:
     """Parse command-line arguments."""
+    def log_level(val: str) -> int:
+        """Ensure that an argument value is a valid log level."""
+        numeric_level = getattr(logging, val.upper(), None)
+        if not isinstance(numeric_level, int):
+            raise ArgumentTypeError('%r is not a valid log level' % val)
+        return numeric_level
+
     parser = ArgumentParser(description='Recover (approximate) mutation graph'
                                         'from a set of AFL seeds')
     parser.add_argument('-s', '--stats', required=False, action='store_true',
                         help='Print statistics about the mutation graph')
     parser.add_argument('-o', '--output', required=False, metavar='DOT',
                         type=Path, help='Output path for DOT file')
+    parser.add_argument('-l', '--log', default=logging.WARN, type=log_level,
+                        help='Logging level')
     parser.add_argument('seed_path', nargs='+', metavar='SEED', type=Path,
                         help='Path to the seed(s) to recover mutation graph')
     return parser.parse_args()
@@ -94,13 +115,13 @@ def fix_regex_dict(mutation: dict) -> dict:
 
 def find_seed(seed_dir: Path, seed_id: int):
     """Find a seed file with the given ID."""
-    seed_files = seed_dir.glob('id[:_]%06d,*' % seed_id)
+    seed_files = list(seed_dir.glob('id[:_]%06d,*' % seed_id))
 
     if not seed_files:
         raise Exception('Could not find seed %s in %s' % (seed_id, seed_dir))
 
     # Each seed should have a unique ID, so there should only be one result
-    return next(seed_files)
+    return seed_files[0]
 
 
 def is_crash(mutation: dict) -> bool:
@@ -155,14 +176,6 @@ def get_mutation_dict(seed: Path) -> dict:
         return mutation
 
     match = QUEUE_MUTATE_SEED_RE.match(seed_name)
-    if match:
-        # Recurse on the parent 'src' seed
-        mutation = fix_regex_dict(match.groupdict())
-        mutation['path'] = seed
-
-        return mutation
-
-    match = QUEUE_MUTATE_SEED_HAVOC_RE.match(seed_name)
     if match:
         # Recurse on the parent 'src' seed
         mutation = fix_regex_dict(match.groupdict())
@@ -311,17 +324,33 @@ def main():
     """The main function."""
     args = parse_args()
 
+    # Configure logger
+    handler = logging.StreamHandler()
+    handler.setFormatter(FORMATTER)
+    logger.addHandler(handler)
+    logger.setLevel(args.log)
+
     mutation_graph = nx.DiGraph()
 
     for seed_path in args.seed_path:
+        logger.info('Generating mutation graph for %s', seed_path)
+        if not seed_path.exists():
+            logger.warn('%s does not exist. Skipping...', seed_path)
+            continue
         seed_graph = gen_mutation_graph(seed_path)
         mutation_graph.update(seed_graph)
+
+    if len(mutation_graph) == 0:
+        logger.error('empty mutation graph')
+        sys.exit(1)
 
     if args.stats:
         print_stats(mutation_graph)
 
     if args.output:
         write_dot(to_dot_graph(mutation_graph), args.output)
+
+    sys.exit(0)
 
 
 if __name__ == '__main__':
