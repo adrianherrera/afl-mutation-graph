@@ -9,8 +9,9 @@ Author: Adrian Herrera
 
 
 from argparse import ArgumentParser, Namespace
+from collections import defaultdict
 from pathlib import Path
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 import logging
 import re
 import sys
@@ -291,7 +292,7 @@ def to_dot_graph(graph: nx.DiGraph) -> nx.DiGraph:
 
 
 def get_path_stats(graph: nx.DiGraph, sources: List[str],
-                   sinks: List[str]) -> (int, int):
+                   sinks: List[str]) -> Tuple[int, int]:
     """
     Get the longest and shortest paths through the graph from a set of source
     nodes to a set of sink nodes.
@@ -306,6 +307,16 @@ def get_path_stats(graph: nx.DiGraph, sources: List[str],
     return len_calc(min), len_calc(max)
 
 
+def get_mutation_stats(graph: nx.DiGraph) -> Dict[str, int]:
+    """Count the number of mutation operators used."""
+    ops = defaultdict(int)
+    for _, mutation in graph.nodes.data('mutation', default={}):
+        if 'op' in mutation:
+            ops[mutation['op']] += 1
+
+    return ops
+
+
 def print_stats(graph: nx.DiGraph) -> None:
     """Print statistics about the mutation graph."""
     sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
@@ -318,6 +329,9 @@ def print_stats(graph: nx.DiGraph) -> None:
     print('num. connected components: %d' % num_connected_components)
     print('shortest mutation chain: %d' % min_len)
     print('longest mutation chain: %d' % max_len)
+    print('mutations:')
+    for op, count in get_mutation_stats(graph).items():
+        print('  %s: %d' % (op, count))
 
 
 def main():
