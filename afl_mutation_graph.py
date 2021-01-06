@@ -12,10 +12,12 @@ from argparse import ArgumentParser, Namespace
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Tuple
+import multiprocessing.pool as mpp
 import logging
 import re
 import sys
 
+from networkx.readwrite.graphml import write_graphml
 import networkx as nx
 try:
     import pygraphviz
@@ -82,12 +84,16 @@ def parse_args() -> Namespace:
 
     parser = ArgumentParser(description='Recover (approximate) mutation graph'
                                         'from a set of AFL seeds')
-    parser.add_argument('-s', '--stats', required=False, action='store_true',
-                        help='Print statistics about the mutation graph')
-    parser.add_argument('-o', '--output', required=False, metavar='DOT',
+    parser.add_argument('-d', '--dot', required=False, metavar='DOT',
                         type=Path, help='Output path for DOT file')
+    parser.add_argument('-g', '--graphml', required=False, metavar='GRAPHML',
+                        type=Path, help='Output path for GraphML file')
+    parser.add_argument('-j', '--jobs', type=int, default=1,
+                        help='Number of parallel jobs')
     parser.add_argument('-l', '--log', default=logging.WARN, type=log_level,
                         help='Logging level')
+    parser.add_argument('-s', '--stats', required=False, action='store_true',
+                        help='Print statistics about the mutation graph')
     parser.add_argument('seed_path', nargs='+', metavar='SEED', type=Path,
                         help='Path to the seed(s) to recover mutation graph')
     return parser.parse_args()
@@ -211,11 +217,16 @@ def gen_mutation_graph(seed: Path) -> nx.DiGraph:
         return [(seed, parent_seed) for parent_seed in
                 get_parent_seeds(mutation)]
 
+    logger.info('Generating mutation graph for %s', seed)
+    if not seed.exists():
+        logger.warn('%s does not exist. Skipping...', seed)
+        return nx.DiGraph()
+
     mutation = get_mutation_dict(seed)
     seed_stack = get_seed_stack(seed, mutation)
 
     mutate_graph = nx.DiGraph()
-    mutate_graph.add_node(mutation['path'], mutation=mutation)
+    mutate_graph.add_node(mutation['path'], **mutation)
 
     # The seed stack is a list of (seed, parent seed) tuples. Once we hit an
     # "orig" seed, parent seed becomes None and we stop
@@ -231,7 +242,7 @@ def gen_mutation_graph(seed: Path) -> nx.DiGraph:
         if mutate_graph.has_edge(node, prev_node):
             continue
 
-        mutate_graph.add_node(node, mutation=mutation)
+        mutate_graph.add_node(node, **mutation)
         mutate_graph.add_edge(node, prev_node)
 
         seed_stack.extend(get_seed_stack(seed, mutation))
@@ -274,21 +285,32 @@ def node_shape(mutation: dict) -> str:
 
 
 def to_dot_graph(graph: nx.DiGraph) -> nx.DiGraph:
-    """Generate a graph that is more ammenable for Graphviz's DOT format."""
+    """Generate a graph that can be serialized to Graphviz's DOT format."""
     dot_graph = nx.DiGraph()
     node_mapping = {}
 
-    for count, (node, mutation) in enumerate(graph.nodes(data='mutation')):
+    for count, (node, mutation) in enumerate(graph.nodes(data=True)):
         dot_graph.add_node(count, shape=node_shape(mutation),
                            label='"%s"' % create_node_label(mutation))
         node_mapping[node] = count
 
     for u, v in graph.edges():
-        mutation = graph.nodes[v]['mutation']
+        mutation = graph.nodes[v]
         dot_graph.add_edge(node_mapping[u], node_mapping[v],
                            label='"%s"' % create_edge_label(mutation))
 
     return dot_graph
+
+
+def to_graphml(graph: nx.DiGraph) -> nx.DiGraph:
+    """Generate a graph that can be serialized to GraphML format."""
+    gml_graph = graph.copy()
+
+    for node, mutation in gml_graph.nodes(data=True):
+        # The path is embedded in the node name
+        del gml_graph.nodes[node]['path']
+
+    return gml_graph
 
 
 def get_path_stats(graph: nx.DiGraph, sources: List[str],
@@ -319,6 +341,10 @@ def get_mutation_stats(graph: nx.DiGraph) -> Dict[str, int]:
 
 def print_stats(graph: nx.DiGraph) -> None:
     """Print statistics about the mutation graph."""
+    print('mutations:')
+    for op, count in get_mutation_stats(graph).items():
+        print('  %s: %d' % (op, count))
+
     sources = [n for n, in_degree in graph.in_degree() if in_degree == 0]
     sinks = [n for n, out_degree in graph.out_degree() if out_degree == 0]
     min_len, max_len = get_path_stats(graph, sources, sinks)
@@ -329,9 +355,6 @@ def print_stats(graph: nx.DiGraph) -> None:
     print('num. connected components: %d' % num_connected_components)
     print('shortest mutation chain: %d' % min_len)
     print('longest mutation chain: %d' % max_len)
-    print('mutations:')
-    for op, count in get_mutation_stats(graph).items():
-        print('  %s: %d' % (op, count))
 
 
 def main():
@@ -346,23 +369,22 @@ def main():
 
     mutation_graph = nx.DiGraph()
 
-    for seed_path in args.seed_path:
-        logger.info('Generating mutation graph for %s', seed_path)
-        if not seed_path.exists():
-            logger.warn('%s does not exist. Skipping...', seed_path)
-            continue
-        seed_graph = gen_mutation_graph(seed_path)
-        mutation_graph.update(seed_graph)
+    with mpp.Pool(processes=args.jobs) as pool:
+        seed_graphs = pool.map(gen_mutation_graph, args.seed_path)
+        for seed_graph in seed_graphs:
+            mutation_graph.update(seed_graph)
 
     if len(mutation_graph) == 0:
         logger.error('empty mutation graph')
         sys.exit(1)
 
+    if args.dot:
+        write_dot(to_dot_graph(mutation_graph), args.dot)
+    if args.graphml:
+        write_graphml(to_graphml(mutation_graph), args.graphml)
+
     if args.stats:
         print_stats(mutation_graph)
-
-    if args.output:
-        write_dot(to_dot_graph(mutation_graph), args.output)
 
     sys.exit(0)
 
